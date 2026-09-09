@@ -1,0 +1,201 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"syscall"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		usage()
+	}
+	switch os.Args[1] {
+	case "run":
+		parent()
+	case "child":
+		child()
+	default:
+		panic("Miyaaauvvv, yardıım!")
+	}
+}
+
+
+
+func usage() {
+	fmt.Fprintf(
+		os.Stderr,
+		`Tekir - Lokal konteyner servisiniz :)
+
+Kullanım:
+  %s run <initramfs.cpio.gz> <komut> [argümanlar...]
+
+Örnek:
+  sudo %s run initramfs.cpio.gz /bin/sh
+
+`,
+		os.Args[0],
+		os.Args[0],
+	)
+
+	os.Exit(1)
+}
+
+func parent() {
+	initramfs, err := filepath.Abs(os.Args[2])
+	if err != nil {
+		panic(err)
+	}
+	if _, err := os.Stat(initramfs); err != nil {
+		panic(fmt.Errorf("initramfs bulunamadı: %w", err))
+	}
+	args := append(
+		[]string{"child", initramfs},
+		os.Args[3:]...,
+	)
+
+	cmd := exec.Command("/proc/self/exe", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS,
+	}
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Println("Hata:", err)
+		os.Exit(1)
+	}
+}
+func child() {
+	initramfs := os.Args[2]
+	command := os.Args[3]
+	commandArgs := os.Args[4:]
+
+	rootfs, err := os.MkdirTemp("", "rootfs-")
+	if err != nil {
+		panic(fmt.Errorf("rootfs oluşturulamadı: %w", err))
+	}
+	defer func() {
+		if err := os.RemoveAll(rootfs); err != nil {
+			fmt.Fprintf(
+				os.Stderr,
+				"rootfs temizlenemedi: %v\n",
+				err,
+			)
+		}
+	}()
+
+	if err := extractInitramfs(initramfs, rootfs); err != nil {
+		panic(err)
+	}
+
+	if err := syscall.Mount(
+		"",
+		"/",
+		"",
+		syscall.MS_PRIVATE|syscall.MS_REC,
+		"",
+	); err != nil {
+		panic(fmt.Errorf("root mount private yapılamadı: %w", err))
+	}
+
+	if err := syscall.Mount(
+		rootfs,
+		rootfs,
+		"",
+		syscall.MS_BIND,
+		"",
+	); err != nil {
+		panic(fmt.Errorf("rootfs bind mount başarısız: %w", err))
+	}
+
+	oldRoot := filepath.Join(rootfs, "oldrootfs")
+
+	if err := os.MkdirAll(oldRoot, 0700); err != nil {
+		panic(fmt.Errorf("oldrootfs oluşturulamadı: %w", err))
+	}
+
+	if err := os.Chdir(rootfs); err != nil {
+		panic(fmt.Errorf("rootfs dizinine girilemedi: %w", err))
+	}
+
+	if err := syscall.PivotRoot(".", "oldrootfs"); err != nil {
+		panic(fmt.Errorf("pivot_root başarısız: %w", err))
+	}
+
+	if err := os.Chdir("/"); err != nil {
+		panic(fmt.Errorf("yeni root'a geçilemedi: %w", err))
+	}
+
+	if err := syscall.Unmount("/oldrootfs", syscall.MNT_DETACH); err != nil {
+		panic(fmt.Errorf("oldrootfs unmount başarısız: %w", err))
+	}
+
+	if err := os.RemoveAll("/oldrootfs"); err != nil {
+		panic(fmt.Errorf("oldrootfs silinemedi: %w", err))
+	}
+
+	cmd := exec.Command(command, commandArgs...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Println("Hata:", err)
+		os.Exit(1)
+	}
+}
+
+func extractInitramfs(archivePath, destination string) error {
+	input, err := os.Open(archivePath)
+	if err != nil {
+		return fmt.Errorf("initramfs açılamadı: %w", err)
+	}
+	defer input.Close()
+
+	gzipCmd := exec.Command("gzip", "-dc")
+	gzipCmd.Stdin = input
+
+	cpioCmd := exec.Command(
+		"cpio",
+		"--extract",
+		"--make-directories",
+		"--preserve-modification-time",
+		"--no-absolute-filenames",
+	)
+	cpioCmd.Dir = destination
+	cpioCmd.Stdin, err = gzipCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("pipe oluşturulamadı: %w", err)
+	}
+
+	gzipCmd.Stderr = os.Stderr
+	cpioCmd.Stderr = os.Stderr
+
+	if err := cpioCmd.Start(); err != nil {
+		return fmt.Errorf("cpio başlatılamadı: %w", err)
+	}
+
+	if err := gzipCmd.Start(); err != nil {
+		return fmt.Errorf("gzip başlatılamadı: %w", err)
+	}
+
+	if err := gzipCmd.Wait(); err != nil {
+		return fmt.Errorf("gzip başarısız: %w", err)
+	}
+
+	if err := cpioCmd.Wait(); err != nil {
+		return fmt.Errorf("cpio başarısız: %w", err)
+	}
+
+	return nil
+}
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
