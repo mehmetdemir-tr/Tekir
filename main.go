@@ -111,6 +111,16 @@ func child() {
 	); err != nil {
 		panic(fmt.Errorf("rootfs bind mount başarısız: %w", err))
 	}
+	// fix 1: permission denied hatası patchlendi.
+	if err := syscall.Mount(
+		"",
+		rootfs,
+		"",
+		syscall.MS_REMOUNT|syscall.MS_BIND,
+		"exec",
+	); err != nil {
+		panic(fmt.Errorf("rootfs remount exec başarısız: %w", err))
+	}
 
 	oldRoot := filepath.Join(rootfs, "oldrootfs")
 
