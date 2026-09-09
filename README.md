@@ -9,7 +9,6 @@ Tekir is a docker-like container runtime that runs initramfs images in isolated 
 sudo ./main run <initramfs.cpio.gz> <komut> [argümanlar...]
 
 ```
----
 
 ## For example:
 ```bash
