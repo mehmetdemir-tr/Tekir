@@ -30,10 +30,10 @@ func usage() {
 		`Tekir - Lokal konteyner servisiniz :)
 
 Kullanım:
-  %s run <initramfs.cpio.gz> <komut> [argümanlar...]
+  %s run <initramfs veya .iso> <komut> [argümanlar...]
 
 Örnek:
-  sudo %s run initramfs.cpio.gz /bin/sh
+  sudo %s run debian.iso /bin/sh
 
 `,
 		os.Args[0],
