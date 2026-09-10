@@ -55,7 +55,6 @@ func parent() {
 		[]string{"child", initramfs},
 		os.Args[3:]...,
 	)
-
 	cmd := exec.Command("/proc/self/exe", args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS,
@@ -70,94 +69,96 @@ func parent() {
 	}
 }
 func child() {
-	initramfs := os.Args[2]
+	imagePath := os.Args[2]
 	command := os.Args[3]
 	commandArgs := os.Args[4:]
 
-	rootfs, err := os.MkdirTemp("", "rootfs-")
+	rootfs, err := os.MkdirTemp(".", "rootfs-")
 	if err != nil {
 		panic(fmt.Errorf("rootfs oluşturulamadı: %w", err))
 	}
+
 	defer func() {
-		if err := os.RemoveAll(rootfs); err != nil {
-			fmt.Fprintf(
-				os.Stderr,
-				"rootfs temizlenemedi: %v\n",
-				err,
-			)
-		}
+		syscall.Unmount(filepath.Join(rootfs, "proc"), syscall.MNT_DETACH)
+		syscall.Unmount(rootfs, syscall.MNT_DETACH)
+		os.RemoveAll(rootfs)
 	}()
 
-	if err := extractInitramfs(initramfs, rootfs); err != nil {
-		panic(err)
+	if filepath.Ext(imagePath) == ".iso" {
+		isoMountPoint, err := os.MkdirTemp(".", "iso-mount-")
+		if err != nil {
+			panic(fmt.Errorf("iso mount dizini oluşturulamadı: %w", err))
+		}
+		
+		defer func() {
+			exec.Command("umount", "-f", isoMountPoint).Run()
+			os.RemoveAll(isoMountPoint)
+		}()
+
+		cmdMount := exec.Command("mount", "-o", "loop,ro", imagePath, isoMountPoint)
+		if err := cmdMount.Run(); err != nil {
+			panic(fmt.Errorf("ISO mount edilemedi: %w", err))
+		}
+
+		targetInitramfs := filepath.Join(isoMountPoint, "boot", "initramfs.cpio.gz")
+		if _, err := os.Stat(targetInitramfs); err != nil {
+			panic(fmt.Errorf("ISO açıldı ancak içinde 'boot/initramfs.cpio.gz' bulunamadı: %w", err))
+		}
+
+		if err := extractInitramfs(targetInitramfs, rootfs); err != nil {
+			panic(fmt.Errorf("ISO içindeki initramfs ayıklanamadı: %w", err))
+		}
+
+	} else {
+		if err := extractInitramfs(imagePath, rootfs); err != nil {
+			panic(err)
+		}
 	}
 
-	if err := syscall.Mount(
-		"",
-		"/",
-		"",
-		syscall.MS_PRIVATE|syscall.MS_REC,
-		"",
-	); err != nil {
+	if err := syscall.Mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); err != nil {
 		panic(fmt.Errorf("root mount private yapılamadı: %w", err))
-	}
-
-	if err := syscall.Mount(
-		rootfs,
-		rootfs,
-		"",
-		syscall.MS_BIND,
-		"",
-	); err != nil {
-		panic(fmt.Errorf("rootfs bind mount başarısız: %w", err))
-	}
-	// fix 1: permission denied hatası patchlendi.
-	if err := syscall.Mount(
-		"",
-		rootfs,
-		"",
-		syscall.MS_REMOUNT|syscall.MS_BIND,
-		"exec",
-	); err != nil {
-		panic(fmt.Errorf("rootfs remount exec başarısız: %w", err))
-	}
-
-	oldRoot := filepath.Join(rootfs, "oldrootfs")
-
-	if err := os.MkdirAll(oldRoot, 0700); err != nil {
-		panic(fmt.Errorf("oldrootfs oluşturulamadı: %w", err))
 	}
 
 	if err := os.Chdir(rootfs); err != nil {
 		panic(fmt.Errorf("rootfs dizinine girilemedi: %w", err))
 	}
 
-	if err := syscall.PivotRoot(".", "oldrootfs"); err != nil {
-		panic(fmt.Errorf("pivot_root başarısız: %w", err))
+	if err := syscall.Chroot("."); err != nil {
+		panic(fmt.Errorf("chroot başarısız: %w", err))
 	}
 
 	if err := os.Chdir("/"); err != nil {
 		panic(fmt.Errorf("yeni root'a geçilemedi: %w", err))
 	}
 
-	if err := syscall.Unmount("/oldrootfs", syscall.MNT_DETACH); err != nil {
-		panic(fmt.Errorf("oldrootfs unmount başarısız: %w", err))
+	os.Mkdir("/proc", 0555)
+	syscall.Mount("proc", "/proc", "proc", 0, "")
+
+	/*argv := append([]string{command}, commandArgs...)
+	if err := syscall.Exec(command, argv, os.Environ()); err != nil {
+		fmt.Println("Hata:", err)
+		os.Exit(1)
+	}*/
+
+	os.Mkdir("/tmp", 0777)
+	syscall.Mount("tmpfs", "/tmp", "tmpfs", 0, "")
+	os.Mkdir("/run", 0777)
+	syscall.Mount("tmpfs", "/run", "tmpfs", 0, "")
+
+	containerEnv := []string{
+		"PATH=/bin:/sbin:/usr/bin:/usr/sbin",
+		"TERM=linux",
+		"HOME=/root",
 	}
 
-	if err := os.RemoveAll("/oldrootfs"); err != nil {
-		panic(fmt.Errorf("oldrootfs silinemedi: %w", err))
-	}
-
-	cmd := exec.Command(command, commandArgs...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
+	argv := append([]string{command}, commandArgs...)
+	if err := syscall.Exec(command, argv, containerEnv); err != nil {
 		fmt.Println("Hata:", err)
 		os.Exit(1)
 	}
 }
+
+
 
 func extractInitramfs(archivePath, destination string) error {
 	input, err := os.Open(archivePath)
