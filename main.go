@@ -195,7 +195,7 @@ func child() {
 	}
 
 	if err := syscall.Mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); err != nil {
-		panic(fmt.Errorf("root mount private yapılamadı: %w", err))
+		fmt.Fprintf(os.Stderr,"uyarı:root mount private yapılamadı (o zalım olası nested olabilir): %v\n", err)	
 	}
 
 	if err := os.Chdir(rootfs); err != nil {
