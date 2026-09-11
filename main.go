@@ -336,7 +336,6 @@ func extractInitramfs(archivePath, destination string) error {
 		"-i",
 		"-d",
 		"-m",
-		"--no-absolute-filenames",
 	)
 	cpioCmd.Dir = destination
 	cpioCmd.Stdin, err = gzipCmd.StdoutPipe()
