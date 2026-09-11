@@ -333,9 +333,9 @@ func extractInitramfs(archivePath, destination string) error {
 
 	cpioCmd := exec.Command(
 		"cpio",
-		"--i",
-		"--d",
-		"--m",
+		"-i",
+		"-d",
+		"-m",
 		"--no-absolute-filenames",
 	)
 	cpioCmd.Dir = destination
