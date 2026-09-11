@@ -26,3 +26,5 @@ go build -o tekir main.go
 
 ### LICENSE:
 This program is licensed under [GPL v3.](https://github.com/mehmetdemir-tr/Tekir/blob/master/LICENSE)
+
+[![Create Release](https://github.com/mehmetdemir-tr/Tekir/actions/workflows/release.yml/badge.svg?event=create)](https://github.com/mehmetdemir-tr/Tekir/actions/workflows/release.yml)
