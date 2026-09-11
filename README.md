@@ -6,21 +6,21 @@ Tekir is a docker-like container runtime that runs initramfs images in isolated 
 
 ## Usage:
 ```bash
-sudo ./main run <initramfs.cpio.gz> <komut> [argümanlar...]
+sudo ./tekir run <initramfs image or an .iso file> <komut> [argümanlar...]
 
 ```
 
 ## For example:
 ```bash
-sudo ./main run initramfs.cpio.gz /bin/sh
-
+sudo ./tekir run initramfs.cpio.gz /bin/sh
+sudo ./tekir run debian.iso /bin/sh
 ```
 ---
 
 ## Compile:
 ```bash
 git clone https://github.com/mehmetdemir-tr/Tekir
-go build -o main main.go
+go build -o tekir main.go
 ```
 ---
 
