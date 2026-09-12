@@ -1,6 +1,6 @@
 # Tekir
 
-Tekir is a docker-like container runtime that runs initramfs images in isolated Linux namespaces without VM/Virtualization.
+Tekir is a lightweight container runtime that runs initramfs images in isolated Linux namespaces without VM/Virtualization.
 
 ---
 
